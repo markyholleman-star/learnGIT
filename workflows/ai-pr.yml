@@ -1,0 +1,40 @@
+name: AI Propose Changes
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  # models permission required to call GitHub Models if used
+  models: read
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gather context
+        run: |
+          echo "TITLE<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      - name: Call AI to generate patch
+        uses: daves-dead-simple/open-ai-action@main
+        id: ai
+        with:
+          prompt: |
+            Use repository files and the issue to propose a small change. Issue title: ${{ steps.gather.outputs.TITLE }}
+      - name: Create branch and PR
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "actions@github.com"
+          git checkout -b ai-proposal-${{ github.run_id }}
+          # apply changes from AI (this is a placeholder)
+          echo "${{ steps.ai.outputs.completion }}" > ai-proposal.txt
+          git add ai-proposal.txt
+          git commit -m "AI: propose changes for issue #${{ github.event.issue.number }}"
+          git push origin HEAD
+          gh pr create --title "AI proposal: ${{ github.event.issue.title }}" --body "${{ steps.ai.outputs.completion }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
