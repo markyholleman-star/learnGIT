@@ -1,0 +1,60 @@
+name: AI Propose Document Changes
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Save issue context
+        run: |
+          echo "ISSUE_TITLE<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ github.event.issue.title }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "ISSUE_BODY<<EOF" >> $GITHUB_OUTPUT
+          echo "${{ github.event.issue.body }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Run AI to propose patch
+        id: ai
+        run: |
+          # This step should call your chosen model or agent.
+          # For a simple start, we produce a patch file from the issue body.
+          # Replace this block with a call to your LLM provider or local agent.
+          echo "PROPOSAL<<EOF" >> $GITHUB_OUTPUT
+          echo "Proposed change for: ${{ steps.save_issue_context.outputs.ISSUE_TITLE }}" >> $GITHUB_OUTPUT
+          echo "${{ steps.save_issue_context.outputs.ISSUE_BODY }}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create branch, commit, and open PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH=ai-proposal-${{ github.run_id }}
+          git config user.name "github-actions[bot]"
+          git config user.email "actions@github.com"
+          git checkout -b $BRANCH
+          # Example: write the AI output into drafts/ai-proposal-<run>.md
+          mkdir -p drafts
+          echo "${{ steps.ai.outputs.PROPOSAL }}" > drafts/ai-proposal-${{ github.run_id }}.md
+          git add drafts/ai-proposal-${{ github.run_id }}.md
+          git commit -m "AI: propose changes for issue #${{ github.event.issue.number }}"
+          git push --set-upstream origin $BRANCH
+          # Create PR using GitHub CLI if available; fallback to API via curl
+          if command -v gh >/dev/null 2>&1; then
+            gh pr create --title "AI proposal: ${{ github.event.issue.title }}" --body "Automated proposal from AI. See draft file." --base main
+          else
+            API_URL="https://api.github.com/repos/${{ github.repository }}/pulls"
+            PR_BODY=$(jq -n --arg t "AI proposal: ${{ github.event.issue.title }}" --arg b "Automated proposal from AI. See draft file." '{title:$t, head:env.BRANCH, base:"main", body:$b}')
+            curl -s -H "Authorization: token $GITHUB_TOKEN" -X POST $API_URL -d "$PR_BODY"
+          fi
